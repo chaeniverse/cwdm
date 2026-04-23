@@ -152,10 +152,12 @@ class TrainLoop:
                     cond = {}
 
             if self.mode=='i2i':
-                batch['t1n'] = batch['t1n'].to(dist_util.dev())
-                batch['t1c'] = batch['t1c'].to(dist_util.dev())
-                batch['t2w'] = batch['t2w'].to(dist_util.dev())
-                batch['t2f'] = batch['t2f'].to(dist_util.dev())
+                # ==== PATCHED ==================================================
+                # Original cWDM moves 4 BraTS modalities (t1n/t1c/t2w/t2f) to GPU.
+                # Our DaTSCANPairs loader returns just 'source' (SC) and 'target' (V04).
+                batch['source'] = batch['source'].to(dist_util.dev())
+                batch['target'] = batch['target'].to(dist_util.dev())
+                # ==============================================================
             else:
                 batch = batch.to(dist_util.dev())
 
@@ -187,24 +189,17 @@ class TrainLoop:
                                                   global_step=self.step + self.resume_step)
 
                 if self.mode == 'i2i':
-                    if not self.contr == 't1n':
-                        image_size = batch['t1n'].size()[2]
-                        midplane = batch['t1n'][0, 0, :, :, image_size // 2]
-                        self.summary_writer.add_image('source/t1n', midplane.unsqueeze(0),
-                                                      global_step=self.step + self.resume_step)
-                    if not self.contr == 't1c':
-                        image_size = batch['t1c'].size()[2]
-                        midplane = batch['t1c'][0, 0, :, :, image_size // 2]
-                        self.summary_writer.add_image('source/t1c', midplane.unsqueeze(0),
-                                                      global_step=self.step + self.resume_step)
-                    if not self.contr == 't2w':
-                        midplane = batch['t2w'][0, 0, :, :, image_size // 2]
-                        self.summary_writer.add_image('source/t2w', midplane.unsqueeze(0),
-                                                      global_step=self.step + self.resume_step)
-                    if not self.contr == 't2f':
-                        midplane = batch['t2f'][0, 0, :, :, image_size // 2]
-                        self.summary_writer.add_image('source/t2f', midplane.unsqueeze(0),
-                                                      global_step=self.step + self.resume_step)
+                    # ==== PATCHED =============================================
+                    # Log the input (SC) and ground-truth target (V04) middle slice
+                    # instead of the original's 4-modality BraTS logging.
+                    image_size = batch['source'].size()[2]
+                    midplane = batch['source'][0, 0, :, :, image_size // 2]
+                    self.summary_writer.add_image('source/SC', midplane.unsqueeze(0),
+                                                  global_step=self.step + self.resume_step)
+                    midplane = batch['target'][0, 0, :, :, image_size // 2]
+                    self.summary_writer.add_image('target/V04', midplane.unsqueeze(0),
+                                                  global_step=self.step + self.resume_step)
+                    # =========================================================
 
 
             if self.step % self.log_interval == 0:
@@ -258,7 +253,8 @@ class TrainLoop:
             p.grad = None
 
         if self.mode == 'i2i':
-            t, weights = self.schedule_sampler.sample(batch['t1n'].shape[0], dist_util.dev())
+            # [PATCHED] batch['t1n'] -> batch['target']  (same purpose: get batch size)
+            t, weights = self.schedule_sampler.sample(batch['target'].shape[0], dist_util.dev())
         else:
             t, weights = self.schedule_sampler.sample(batch.shape[0], dist_util.dev())
 

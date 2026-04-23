@@ -1080,40 +1080,18 @@ class GaussianDiffusion:
             model_kwargs = {}
 
         elif mode == 'i2i':
-            if contr == 't1n':
-                target = x_start['t1n']  # target
-                cond_1 = x_start['t1c']  # condition
-                cond_2 = x_start['t2w']  # condition
-                cond_3 = x_start['t2f']  # condition
+            # ==== PATCHED FOR DaTScan SC -> V04 ====================
+            # Original cWDM supports BraTS 4-way synthesis: pick one of
+            # {t1n, t1c, t2w, t2f} as target, use the other 3 as condition.
+            # Our problem has exactly one condition (SC) and one target (V04),
+            # so the 4-way branching is gone; 'contr' is ignored.
+            target = x_start['target']     # V04 ground truth
+            cond_1 = x_start['source']     # SC baseline (spatial condition)
 
-            elif contr == 't1c':
-                target = x_start['t1c']  # target
-                cond_1 = x_start['t1n']  # condition
-                cond_2 = x_start['t2w']  # condition
-                cond_3 = x_start['t2f']  # condition
-
-            elif contr == 't2w':
-                target = x_start['t2w']  # target
-                cond_1 = x_start['t1n']  # condition
-                cond_2 = x_start['t1c']  # condition
-                cond_3 = x_start['t2f']  # condition
-
-            elif contr == 't2f':
-                target = x_start['t2f']  # target
-                cond_1 = x_start['t1n']  # condition
-                cond_2 = x_start['t1c']  # condition
-                cond_3 = x_start['t2w']  # condition
-
-            else:
-                print("This contrast can't be synthesized.")
-
-            # Concatenate conditions along the channel dimension
+            # Condition DWT: single modality -> 8 wavelet subbands (8 channels)
             LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt(cond_1)
             cond_dwt = th.cat([LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
-            LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt(cond_2)
-            cond_dwt = th.cat([cond_dwt, LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
-            LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt(cond_3)
-            cond_dwt = th.cat([cond_dwt, LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
+            # ==== END PATCH ========================================
 
         # Wavelet transform the input image
         LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt(target)

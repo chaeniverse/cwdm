@@ -16,7 +16,8 @@ from guided_diffusion.resample import create_named_schedule_sampler
 from guided_diffusion.script_util import (model_and_diffusion_defaults, create_model_and_diffusion,
                                           args_to_dict, add_dict_to_argparser)
 from guided_diffusion.train_util import TrainLoop
-from guided_diffusion.bratsloader import BRATSVolumes
+# [PATCHED] Replace BRATSVolumes with our DaTScan SC->V04 loader.
+from guided_diffusion.datscanloader import DaTSCANPairs
 from torch.utils.tensorboard import SummaryWriter
 
 
@@ -52,7 +53,10 @@ def main():
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion,  maxt=1000)
 
     if args.dataset == 'brats':
-        ds = BRATSVolumes(args.data_dir, mode='train')
+        # [PATCHED] Using DaTScan SC/V04 pairs instead of BraTS 4-modality volumes.
+        # 'brats' dataset name is preserved so the surrounding pipeline (which
+        # branches on args.dataset) doesn't need edits.
+        ds = DaTSCANPairs(args.data_dir, mode='train')
 
     datal = th.utils.data.DataLoader(ds,
                                      batch_size=args.batch_size,
