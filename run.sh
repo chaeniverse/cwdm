@@ -8,19 +8,25 @@
 #   - CONTR is left in for arg compatibility but has no effect (no 4-way branching)
 # =============================================================================
 
+# [NEW] 외부에서 override 가능하도록
+ITERATIONS=${ITERATIONS:-50}
+SPLIT_NAME=${SPLIT_NAME:-test}
+
 # ---- general settings -------------------------------------------------------
-GPU=0
-SEED=42
+GPU=${GPU:-0}
+SEED=${SEED:-42}
 CHANNELS=64
-MODE='sample'               # 'train' or 'sample'
+MODE=${MODE:-sample}        # 'train' or 'sample' — 외부 override 가능
 DATASET='brats'            # kept as 'brats' so the dataset-name branches work unchanged
 MODEL='unet'
 CONTR='v04'                # [PATCHED] unused in our i2i pipeline; any string is fine
 
+# [NEW] split 관련 변수
+SPLIT_FILE='/workspace/split.json'
+
 # ---- sampling settings (only used when MODE=sample) -------------------------
-ITERATIONS=50              # which checkpoint to load (50k step = 50)
 SAMPLING_STEPS=0           # 0 = full 1000-step reverse diffusion
-RUN_DIR="runs/Apr19_12-39-37_559bd69da4ff"                 # set before sampling, e.g. runs/<timestamp>
+RUN_DIR=${RUN_DIR:-"runs/Apr19_12-39-37_559bd69da4ff"}
 
 # ---- model architecture (cWDM U-Net, 4-level downsample) --------------------
 if [[ $MODEL == 'unet' ]]; then
@@ -28,8 +34,8 @@ if [[ $MODEL == 'unet' ]]; then
   CHANNEL_MULT=1,2,2,4,4
   ADDITIVE_SKIP=False
   BATCH_SIZE=1
-  IMAGE_SIZE=128           # [PATCHED] padded-volume reference size (mostly cosmetic)
-  IN_CHANNELS=16           # [PATCHED] target(8) + condition(8) = 16. Was 32 for BraTS.
+  IMAGE_SIZE=128
+  IN_CHANNELS=16
   NOISE_SCHED='linear'
 else
   echo "MODEL TYPE NOT FOUND"
@@ -38,11 +44,11 @@ fi
 # ---- data dir resolution ----------------------------------------------------
 if [[ $MODE == 'train' ]]; then
   echo "MODE: training"
-  DATA_DIR=/workspace/DaTSCAN-nii              # [PATCHED]
+  DATA_DIR=/workspace/DaTSCAN-nii
 elif [[ $MODE == 'sample' ]]; then
   BATCH_SIZE=1
   echo "MODE: sampling (image-to-image translation)"
-  DATA_DIR=/workspace/DaTSCAN-nii              # [PATCHED]
+  DATA_DIR=/workspace/DaTSCAN-nii
 fi
 
 # ---- shared flags -----------------------------------------------------------
@@ -72,11 +78,13 @@ COMMON="
 --use_freq=False
 --predict_xstart=True
 --contr=${CONTR}
+--split_file=${SPLIT_FILE}
 "
 
 # ---- train-only flags -------------------------------------------------------
 TRAIN="
 --data_dir=${DATA_DIR}
+--split_name=train
 --resume_checkpoint=
 --resume_step=0
 --image_size=${IMAGE_SIZE}
@@ -94,9 +102,10 @@ SAMPLE="
 --seed=${SEED}
 --image_size=${IMAGE_SIZE}
 --use_fp16=False
---model_path=${RUN_DIR}/checkpoints/${DATASET}_${ITERATIONS}000.pt
+--model_path=${RUN_DIR}/checkpoints/${DATASET}_$(printf "%06d" $((ITERATIONS*1000))).pt
 --devices=${GPU}
---output_dir=./results/${DATASET}_${MODEL}_${ITERATIONS}000/
+--output_dir=./results/${DATASET}_${MODEL}_${ITERATIONS}000_${SPLIT_NAME}/
+--split_name=${SPLIT_NAME}
 --num_samples=1000
 --use_ddim=False
 --sampling_steps=${SAMPLING_STEPS}

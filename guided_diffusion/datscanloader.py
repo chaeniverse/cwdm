@@ -59,7 +59,8 @@ class DaTSCANPairs(torch.utils.data.Dataset):
     def __init__(self, directory, mode='train',
                  source_visit='SC', target_visit='V04',
                  expected_shape=(91, 109, 91),
-                 target_shape=(96, 128, 96)):
+                 target_shape=(96, 128, 96),
+                 split_file=None, split_name='train'):
         super().__init__()
         self.mode = mode
         self.directory = os.path.expanduser(directory)
@@ -76,6 +77,31 @@ class DaTSCANPairs(torch.utils.data.Dataset):
         tgt_files = {f.split('_')[0]: os.path.join(tgt_dir, f)
                      for f in os.listdir(tgt_dir) if f.endswith('.nii.gz')}
         common_ids = sorted(set(src_files) & set(tgt_files))
+
+        # ============================================================
+        # [NEW] Split 필터링
+        # ------------------------------------------------------------
+        # split_file이 주어지면, JSON에서 split_name 키의 PID만 사용한다.
+        # PID 단위 분할이므로 SC/V04 어느 쪽에 있든 무관 (둘 다 같은 PID).
+        # split_file이 없으면 기존 동작(모든 paired PID 사용)을 유지한다.
+        # ============================================================
+        if split_file is not None:
+            import json
+            with open(split_file) as f:
+                splits = json.load(f)
+            if split_name not in splits:
+                raise KeyError(f"'{split_name}' not in {split_file}. "
+                               f"Available: {[k for k in splits if not k.startswith('_')]}")
+            split_pids = set(str(p) for p in splits[split_name])
+            before = len(common_ids)
+            common_ids = [pid for pid in common_ids if pid in split_pids]
+            print(f"[DaTSCANPairs] split='{split_name}': "
+                  f"{len(common_ids)} of {before} paired PIDs kept")
+            # split JSON에는 있지만 디스크에 없는 PID 경고 (전처리 누락 등 catch)
+            missing = split_pids - set(common_ids)
+            if missing:
+                print(f"  [warning] {len(missing)} PIDs in split but not on disk")
+        # ============================================================
 
         # Quality filter. Done once at __init__ so training never crashes mid-run.
         # get_fdata() reads the full volume (~4 MB each), ~6s total for 800 patients.

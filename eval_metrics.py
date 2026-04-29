@@ -40,7 +40,25 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-
+# ============================================================
+# [NEW] Test set filtering — split 파일에서 PID 로딩
+# ============================================================
+def load_split_pids(split_file, split_name="test"):
+    """
+    Split JSON에서 평가 대상 PID 리스트를 로딩한다.
+    make_split.py가 만든 형식과 호환:
+        {"train": [...], "val": [...], "test": [...], "_meta": {...}}
+    """
+    import json
+    with open(split_file) as f:
+        data = json.load(f)
+    if split_name not in data:
+        raise KeyError(f"'{split_name}' not in {split_file}. "
+                       f"Available: {[k for k in data if not k.startswith('_')]}")
+    pids = [str(p) for p in data[split_name]]
+    print(f"[load_split_pids] '{split_name}' split: {len(pids)} PIDs from {split_file}")
+    return pids
+    
 # ============================================================
 # 1. Image Quality Metrics
 # ============================================================
@@ -252,7 +270,7 @@ def plot_sbr_scatter(df, save_dir):
 # ============================================================
 # 4. Main Evaluation
 # ============================================================
-def evaluate(results_dir):
+def evaluate(results_dir, split_pids=None, split_name="test"):
     if not os.path.exists(results_dir):
         raise FileNotFoundError(f"results_dir not found: {results_dir}")
 
@@ -287,7 +305,35 @@ def evaluate(results_dir):
     n_vis = 0
     max_vis = 10  # color scale 비교 이미지 최대 생성 수
 
-    for pid in sorted(os.listdir(results_dir)):
+    # ============================================================
+    # [NEW] split_pids 필터링
+    # ------------------------------------------------------------
+    # results_dir에는 sampling된 환자 폴더가 있다.
+    # split_pids가 주어지면 해당 PID만 평가한다.
+    # ============================================================
+    all_dirs = sorted([d for d in os.listdir(results_dir)
+                       if os.path.isdir(os.path.join(results_dir, d))])
+
+    if split_pids is not None:
+        split_set = set(split_pids)
+        pids_to_eval = [p for p in all_dirs if p in split_set]
+        missing = split_set - set(all_dirs)
+        if missing:
+            print(f"[warning] {len(missing)} '{split_name}' PIDs declared in split "
+                  f"are NOT present in {results_dir}:")
+            for p in sorted(missing)[:10]:
+                print(f"  - {p}")
+            if len(missing) > 10:
+                print(f"  ... and {len(missing) - 10} more")
+        print(f"[info] Filtered: {len(pids_to_eval)} of {len(all_dirs)} "
+              f"folders match '{split_name}' split.\n")
+    else:
+        pids_to_eval = all_dirs
+        print(f"[warning] No split filter. Evaluating ALL {len(all_dirs)} folders "
+              f"(NOT a held-out evaluation).\n")
+    # ============================================================
+
+    for pid in pids_to_eval:   # [MODIFIED] was: sorted(os.listdir(results_dir))
         d = os.path.join(results_dir, pid)
         if not os.path.isdir(d):
             continue
@@ -401,13 +447,14 @@ def evaluate(results_dir):
     # SBR scatter plots
     plot_sbr_scatter(df_clean, fig_dir)
 
-    # Save CSV
-    csv_path = f"eval_metrics_{dirname}.csv"
+    # [MODIFIED] split 이름을 파일명에 명시 (val/test 결과 혼동 방지)
+    suffix = f"_{split_name}" if split_pids is not None else "_all"
+    csv_path = f"eval_metrics_{dirname}{suffix}.csv"
     df.to_csv(csv_path, index=False)
     print(f"\nSaved CSV: {csv_path}")
 
     # Save summary text
-    summary_path = f"eval_summary_{dirname}.txt"
+    summary_path = f"eval_summary_{dirname}{suffix}.txt"
     with open(summary_path, "w") as f:
         f.write(f"Evaluation Summary (n={len(df_clean)})\n")
         f.write(f"{'=' * 50}\n\n")
@@ -441,6 +488,20 @@ def evaluate(results_dir):
     print(f"  - regional_sbr_scatter.png (caudate/putamen/P-C ratio)")
 
 
+# ============================================================
+# [MODIFIED] argparse로 변경
+# ============================================================
 if __name__ == "__main__":
-    target_dir = sys.argv[1] if len(sys.argv) > 1 else "results/brats_unet_50000"
-    evaluate(target_dir)
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="cWDM 합성 결과 평가 (val/test 등 특정 split만 평가)."
+    )
+    parser.add_argument("results_dir", type=str)
+    parser.add_argument("--split_file", type=str, default=None,
+                        help="split.json 경로. 없으면 전체 평가.")
+    parser.add_argument("--split", type=str, default="test",
+                        help="평가할 split 이름 ('val' 또는 'test', 기본: test)")
+    args = parser.parse_args()
+
+    pids = load_split_pids(args.split_file, args.split) if args.split_file else None
+    evaluate(args.results_dir, split_pids=pids, split_name=args.split)

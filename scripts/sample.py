@@ -51,8 +51,14 @@ def main():
     model.to(dist_util.dev([0, 1]) if len(args.devices) > 1 else dist_util.dev())
 
     if args.dataset == 'brats':
-        # [PATCHED] DaTScan loader instead of BRATSVolumes
-        ds = DaTSCANPairs(args.data_dir, mode='eval')
+        split_file = args.split_file if args.split_file else None
+        ds = DaTSCANPairs(
+            args.data_dir,
+            mode='eval',                    # [FIX] sample이므로 eval
+            split_file=split_file,
+            split_name=args.split_name,     # [FIX] CLI 인자로 받은 split (val 또는 test)
+        )
+
 
     datal = th.utils.data.DataLoader(ds,
                                      batch_size=args.batch_size,
@@ -152,6 +158,8 @@ def create_argparser():
     defaults = dict(
         seed=0,
         data_dir="",
+        split_file="",  # [NEW] split JSON 파일 경로
+        split_name="test",  # [NEW] 사용할 split 이름 (val 또는 test)
         data_mode='validation',
         clip_denoised=True,
         num_samples=1,

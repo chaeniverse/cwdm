@@ -53,10 +53,14 @@ def main():
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion,  maxt=1000)
 
     if args.dataset == 'brats':
-        # [PATCHED] Using DaTScan SC/V04 pairs instead of BraTS 4-modality volumes.
-        # 'brats' dataset name is preserved so the surrounding pipeline (which
-        # branches on args.dataset) doesn't need edits.
-        ds = DaTSCANPairs(args.data_dir, mode='train')
+        # [NEW] 빈 문자열은 None으로 변환 (run.sh가 항상 인자를 넘기므로)
+        split_file = args.split_file if args.split_file else None
+        ds = DaTSCANPairs(
+            args.data_dir,
+            mode='train',                 # sample.py에서는 'eval'
+            split_file=split_file,        # [MODIFIED]
+            split_name='train',           # sample.py에서는 args.split_name
+        )
 
     datal = th.utils.data.DataLoader(ds,
                                      batch_size=args.batch_size,
@@ -94,6 +98,8 @@ def create_argparser():
     defaults = dict(
         seed=0,
         data_dir="",
+        split_file="",  # [NEW] split JSON 파일 경로
+        split_name="train",        # [NEW] 사용할 split 이름
         schedule_sampler="uniform",
         lr=1e-4,
         weight_decay=0.0,
